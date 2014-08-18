@@ -35,4 +35,3 @@ If the installation is performed through ssh the connection may drop. Requiring 
 
 ### Cat all files in a directory recursively:
 	$ cd /etc/; for i in $(find . -name "*.*" -print | xargs); do cat $i; done
-
