@@ -641,6 +641,9 @@ def install_and_configure_ovs():
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "interface_driver", "neutron.agent.linux.interface.OVSInterfaceDriver")
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "dhcp_driver", "neutron.agent.linux.dhcp.Dnsmasq")
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "use_namespaces", "True")
+	add_to_conf(neutron_dhcp_ini, "DEFAULT", "dnsmasq_config_file", "/etc/neutron/dnsmasq-neutron.conf")
+	execute("touch /etc/neutron/dnsmasq-neutron.conf")
+	execute("echo 'dhcp-option-force=26,1454' | sudo tee --append /etc/neutron/dnsmasq-neutron.conf")
 
 	add_to_conf(neutron_l3_ini, "DEFAULT", "interface_driver", "neutron.agent.linux.interface.OVSInterfaceDriver")
 	add_to_conf(neutron_l3_ini, "DEFAULT", "use_namespaces", "True")

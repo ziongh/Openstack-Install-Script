@@ -230,6 +230,7 @@ def initialize_system():
 
 #iuyiuiyui = raw_input('getting IPs...')
 ip_address = get_ip_address(Web_Interface)
+my_ip=ip_address
 ip_address_mgnt = get_ip_address(Managment_Interface)
 ip_address_tunneling = get_ip_address(Tunneling_Interface)
 
@@ -388,7 +389,7 @@ def create_keystone_users():
 
 	service_tenant = execute("keystone tenant-create --name service --description 'Service Tenant' --enabled true |grep ' id '|awk '{print $4}'")
 	#iuyiuiyui = raw_input('Created Keystone user service...')
-
+	#service_tenant = "service"
 
 	#keystone
 	keystone_service = execute("keystone service-create --name=keystone --type=identity --description='Keystone Identity Service'|grep ' id '|awk '{print $4}'")
@@ -557,6 +558,7 @@ def install_and_configure_nova():
 	add_to_conf(nova_conf, "DEFAULT", "rabbit_host", ip_address_mgnt)
 	add_to_conf(nova_conf, "DEFAULT", "rabbit_password", RABBIT_PASS)
 
+
 	add_to_conf(nova_conf, "DEFAULT", "my_ip", ip_address_mgnt)
 	add_to_conf(nova_conf, "DEFAULT", "vncserver_listen", ip_address)
 	add_to_conf(nova_conf, "DEFAULT", "vncserver_proxyclient_address", ip_address)
@@ -599,15 +601,10 @@ def install_and_configure_nova():
 	add_to_conf(nova_conf, "DEFAULT", "firewall_driver", "nova.virt.firewall.NoopFirewallDriver")
 	add_to_conf(nova_conf, "DEFAULT", "security_group_api", "neutron")
 
+
 	add_to_conf(nova_conf, "DEFAULT", "service_neutron_metadata_proxy", "true")
 	add_to_conf(nova_conf, "DEFAULT", "neutron_metadata_proxy_shared_secret", ADMINTOKEN)
 
-
-
-	#add_to_conf(nova_conf, "DEFAULT", "dhcpbridge_flagfile", "/etc/nova/nova.conf")
-	#add_to_conf(nova_conf, "DEFAULT", "novnc_enabled", "true")
-	#add_to_conf(nova_conf, "DEFAULT", "novncproxy_base_url", "http://%s:6080/vnc_auto.html" % ip_address_mgnt)
-	#add_to_conf(nova_conf, "DEFAULT", "novncproxy_port", "6080")
   
 	execute("nova-manage db sync")
 	#iuyiuiyui = raw_input('Created SQL tables Nova')
@@ -620,8 +617,67 @@ def install_and_configure_nova():
 	execute("service nova-novncproxy restart", True)
 	time.sleep(2)
 
+def install_and_configure_nova_compute():
+	nova_conf = "/etc/nova/nova.conf"
+	nova_paste_conf = "/etc/nova/api-paste.ini"
+	nova_compute_conf = "/etc/nova/nova-compute.conf"
+
+	execute("apt-get install qemu-kvm libvirt-bin python-libvirt python-novaclient -y", True)
+	execute("apt-get install nova-compute-kvm novnc python-guestfs -y", True)
+
+	execute("dpkg-statoverride	--update --add root root 0644 /boot/vmlinuz-$(uname -r)", True)
+
+	execute("touch /etc/kernel/postinst.d/statoverride",True)
+
+	write_to_file("/etc/kernel/postinst.d/statoverride", "#!/bin/sh\n")
+	write_to_file("/etc/kernel/postinst.d/statoverride", "version=\"$1\"\n")
+	write_to_file("/etc/kernel/postinst.d/statoverride", "# passing the kernel version is required\n")
+	write_to_file("/etc/kernel/postinst.d/statoverride", "[ -z \"${version}\" ] && exit 0\n")
+	write_to_file("/etc/kernel/postinst.d/statoverride", "dpkg-statoverride --update --add root root 0644 /boot/vmlinuz-${version}\n")
+
+	execute("chmod +x /etc/kernel/postinst.d/statoverride")
+
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_host", ip_address_mgnt)
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_port", "35357")
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_protocol", "http")
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_tenant_name", "service")
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_user", "nova")
+	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_password", NOVA_PASS)
+
+	add_to_conf(nova_conf, "DEFAULT", "my_ip", my_ip)
+	add_to_conf(nova_conf, "DEFAULT", "vnc_enabled", "True")
+	add_to_conf(nova_conf, "DEFAULT", "vncserver_listen", "0.0.0.0")
+	add_to_conf(nova_conf, "DEFAULT", "vncserver_proxyclient_address", my_ip)
+	add_to_conf(nova_conf, "DEFAULT", "novncproxy_base_url", "http://%s:6080/vnc_auto.html" %ip_address)
+
+	add_to_conf(nova_conf, "DEFAULT", "glance_host", ip_address_mgnt)
+
+	try:
+		execute("rm /var/lib/nova/nova.sqlite",True)
+	except Exception:
+		print "Already deleted file"
+
+	add_to_conf(nova_conf, "DEFAULT", "lock_path", "/var/lib/nova")
+	add_to_conf(nova_conf, "DEFAULT", "compute_driver", "libvirt.LibvirtDriver")
+	add_to_conf(nova_conf, "DEFAULT", "dhcpbridge_flagfile", "/etc/nova/nova.conf")
+	#add_to_conf(nova_conf, "DEFAULT", "libvirt_vif_driver", "nova.virt.libvirt.vif.LibvirtGenericVIFDriver")
+	#add_to_conf(nova_conf, "DEFAULT", "root_helper", "sudo nova-rootwrap /etc/nova/rootwrap.conf")
+
+
+	add_to_conf(nova_conf, "DEFAULT", "novnc_enabled", "true")
+	add_to_conf(nova_conf, "DEFAULT", "novncproxy_port", "6080")
+   
+	add_to_conf(nova_compute_conf, "DEFAULT", "libvirt_type", "qemu")
+	#add_to_conf(nova_compute_conf, "DEFAULT", "compute_driver", "libvirt.LibvirtDriver")
+	#add_to_conf(nova_compute_conf, "DEFAULT", "libvirt_vif_type", "ethernet")
+  
+	execute("service libvirt-bin restart", True)
+	execute("service nova-compute restart", True)
+	time.sleep(2)
+
 
 def install_and_configure_neutron():
+	global service_tenant
 	neutron_conf = "/etc/neutron/neutron.conf"
 	neutron_paste_conf = "/etc/neutron/api-paste.ini"
 	neutron_plugin_conf = "/etc/neutron/plugins/ml2/ml2_conf.ini"
@@ -648,6 +704,7 @@ def install_and_configure_neutron():
 	add_to_conf(neutron_conf, "keystone_authtoken", "admin_tenant_name", "service")
 	add_to_conf(neutron_conf, "keystone_authtoken", "admin_user", "neutron")
 	add_to_conf(neutron_conf, "keystone_authtoken", "admin_password ", NEUTRON_PASS)
+
 
 	add_to_conf(neutron_conf, "DEFAULT", "rpc_backend", "neutron.openstack.common.rpc.impl_kombu")
 	add_to_conf(neutron_conf, "DEFAULT", "rabbit_host", ip_address_mgnt)
@@ -729,6 +786,9 @@ def install_and_configure_ovs():
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "interface_driver", "neutron.agent.linux.interface.OVSInterfaceDriver")
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "dhcp_driver", "neutron.agent.linux.dhcp.Dnsmasq")
 	add_to_conf(neutron_dhcp_ini, "DEFAULT", "use_namespaces", "True")
+	add_to_conf(neutron_dhcp_ini, "DEFAULT", "dnsmasq_config_file", "/etc/neutron/dnsmasq-neutron.conf")
+	execute("touch /etc/neutron/dnsmasq-neutron.conf")
+	execute("echo 'dhcp-option-force=26,1454' | sudo tee --append /etc/neutron/dnsmasq-neutron.conf")
 
 	add_to_conf(neutron_l3_ini, "DEFAULT", "interface_driver", "neutron.agent.linux.interface.OVSInterfaceDriver")
 	add_to_conf(neutron_l3_ini, "DEFAULT", "use_namespaces", "True")
@@ -773,168 +833,18 @@ def install_and_configure_ovs():
 
 
 
-
-
-def install_and_configure_dashboard():
-	execute("apt-get install apache2 memcached libapache2-mod-wsgi openstack-dashboard -y", True)
-	execute("apt-get remove --purge openstack-dashboard-ubuntu-theme -y", True);
-
-	execute("service apache2 restart", True)
-	execute("service memcached restart", True)
-	time.sleep(2)
-
-def add_cirros_image():
-
-	execute("mkdir /tmp/images",True)
-	execute("cd /tmp/images/",True)
-	execute("wget http://cdn.download.cirros-cloud.net/0.3.2/cirros-0.3.2-x86_64-disk.img",True)
-	execute("glance --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 image-create --name \"cirros-0.3.2-x86_64\" --disk-format qcow2 --container-format bare --is-public True --progress < cirros-0.3.2-x86_64-disk.img" %(ADMIN_TENANT_PASS,ip_address_mgnt),True)
-
-def create_initial_network():
-	
-	ip_parts = ip_address.split(".",4)
-
-	ext_start_address = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "." + "200"
-	ext_end_address = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "." + "253"
-
-	full_cidr = str(netaddr.IPNetwork(ip_address + "/" + ip_mask).cidr)
-
-	execute("neutron --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 net-create ext-net --shared --router:external=True"%(ADMIN_TENANT_PASS,ip_address_mgnt),True)
-	execute("neutron --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 subnet-create ext-net --name ext-subnet --allocation-pool start=%s,end=%s --disable-dhcp --gateway %s %s"%(ADMIN_TENANT_PASS,ip_address_mgnt,ext_start_address,ext_end_address,ip_address_gateway,full_cidr),True)
-
-def install_and_configure_nova_compute():
-	nova_conf = "/etc/nova/nova.conf"
-	nova_paste_conf = "/etc/nova/api-paste.ini"
-	nova_compute_conf = "/etc/nova/nova-compute.conf"
-
-	execute("apt-get install qemu-kvm libvirt-bin python-libvirt python-novaclient -y", True)
-	execute("apt-get install nova-compute-kvm novnc python-guestfs -y", True)
-
-	execute("dpkg-statoverride	--update --add root root 0644 /boot/vmlinuz-$(uname -r)", True)
-
-	execute("touch /etc/kernel/postinst.d/statoverride",True)
-
-	write_to_file("/etc/kernel/postinst.d/statoverride", "#!/bin/sh\n")
-	write_to_file("/etc/kernel/postinst.d/statoverride", "version=\"$1\"\n")
-	write_to_file("/etc/kernel/postinst.d/statoverride", "# passing the kernel version is required\n")
-	write_to_file("/etc/kernel/postinst.d/statoverride", "[ -z \"${version}\" ] && exit 0\n")
-	write_to_file("/etc/kernel/postinst.d/statoverride", "dpkg-statoverride --update --add root root 0644 /boot/vmlinuz-${version}\n")
-
-	execute("chmod +x /etc/kernel/postinst.d/statoverride")
-
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_host", ip_address_mgnt)
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_port", "35357")
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "auth_protocol", "http")
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_tenant_name", "service")
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_user", "nova")
-	#add_to_conf(nova_paste_conf, "filter:authtoken", "admin_password", NOVA_PASS)
-
-	add_to_conf(nova_conf, "DEFAULT", "auth_strategy", "keystone")
-	add_to_conf(nova_conf, "database", "connection", "mysql://nova:%s@%s/nova" %(NOVA_PASS,ip_address_mgnt))
-
-	add_to_conf(nova_conf, "keystone_authtoken", "auth_uri", "http://%s:5000/v2.0" %ip_address_mgnt)
-	add_to_conf(nova_conf, "keystone_authtoken", "auth_host", ip_address_mgnt)
-	add_to_conf(nova_conf, "keystone_authtoken", "auth_port", "35357")
-	add_to_conf(nova_conf, "keystone_authtoken", "auth_protocol", "http")
-	add_to_conf(nova_conf, "keystone_authtoken", "admin_tenant_name", "service")
-	add_to_conf(nova_conf, "keystone_authtoken", "admin_user", "nova")
-	add_to_conf(nova_conf, "keystone_authtoken", "admin_password ", NOVA_PASS)
-
-	add_to_conf(nova_conf, "DEFAULT", "rpc_backend", "rabbit")
-	add_to_conf(nova_conf, "DEFAULT", "rabbit_host", ip_address_mgnt)
-	add_to_conf(nova_conf, "DEFAULT", "rabbit_password", RABBIT_PASS)
-
-	add_to_conf(nova_conf, "DEFAULT", "my_ip", my_ip)
-	add_to_conf(nova_conf, "DEFAULT", "vnc_enabled", "True")
-	add_to_conf(nova_conf, "DEFAULT", "vncserver_listen", "0.0.0.0")
-	add_to_conf(nova_conf, "DEFAULT", "vncserver_proxyclient_address", my_ip)
-	add_to_conf(nova_conf, "DEFAULT", "novncproxy_base_url", "http://%s:6080/vnc_auto.html" %ip_address)
-
-	add_to_conf(nova_conf, "DEFAULT", "glance_host", ip_address_mgnt)
-
-	try:
-		execute("rm /var/lib/nova/nova.sqlite",True)
-	except Exception:
-		print "Already deleted file"
-
-	add_to_conf(nova_conf, "DEFAULT", "logdir", "/var/log/nova")
-	add_to_conf(nova_conf, "DEFAULT", "verbose", "True")
-	add_to_conf(nova_conf, "DEFAULT", "debug", "True")
-	add_to_conf(nova_conf, "DEFAULT", "lock_path", "/var/lib/nova")
-	add_to_conf(nova_conf, "DEFAULT", "compute_driver", "libvirt.LibvirtDriver")
-	add_to_conf(nova_conf, "DEFAULT", "dhcpbridge_flagfile", "/etc/nova/nova.conf")
-	#add_to_conf(nova_conf, "DEFAULT", "libvirt_vif_driver", "nova.virt.libvirt.vif.LibvirtGenericVIFDriver")
-	#add_to_conf(nova_conf, "DEFAULT", "root_helper", "sudo nova-rootwrap /etc/nova/rootwrap.conf")
-
-	add_to_conf(nova_conf, "DEFAULT", "network_api_class", "nova.network.neutronv2.api.API")
-	add_to_conf(nova_conf, "DEFAULT", "neutron_url", "http://%s:9696"%ip_address_mgnt)
-	add_to_conf(nova_conf, "DEFAULT", "neutron_auth_strategy", "keystone")
-	add_to_conf(nova_conf, "DEFAULT", "neutron_admin_tenant_name", "service")
-	add_to_conf(nova_conf, "DEFAULT", "neutron_admin_username", "neutron")
-	add_to_conf(nova_conf, "DEFAULT", "neutron_admin_password", NEUTRON_PASS)
-	add_to_conf(nova_conf, "DEFAULT", "neutron_admin_auth_url", "http://%s:35357/v2.0"%ip_address_mgnt)
-	add_to_conf(nova_conf, "DEFAULT", "linuxnet_interface_driver", "nova.network.linux_net.LinuxOVSInterfaceDriver")
-	add_to_conf(nova_conf, "DEFAULT", "firewall_driver", "nova.virt.firewall.NoopFirewallDriver")
-	add_to_conf(nova_conf, "DEFAULT", "security_group_api", "neutron")
-
-
-
-	add_to_conf(nova_conf, "DEFAULT", "novnc_enabled", "true")
-	add_to_conf(nova_conf, "DEFAULT", "novncproxy_port", "6080")
-   
-	add_to_conf(nova_compute_conf, "DEFAULT", "libvirt_type", "qemu")
-	#add_to_conf(nova_compute_conf, "DEFAULT", "compute_driver", "libvirt.LibvirtDriver")
-	#add_to_conf(nova_compute_conf, "DEFAULT", "libvirt_vif_type", "ethernet")
-  
-	execute("service libvirt-bin restart", True)
-	execute("service nova-compute restart", True)
-	time.sleep(2)
-
-
 def install_and_configure_ovs_compute():
 	neutron_conf = "/etc/neutron/neutron.conf"
 	neutron_paste_conf = "/etc/neutron/api-paste.ini"
 	neutron_plugin_conf = "/etc/neutron/plugins/ml2/ml2_conf.ini" 
 
-	execute("sed -i 's/#net.ipv4.conf.default.rp_filter=1/net.ipv4.conf.default.rp_filter=0/g' /etc/sysctl.conf",True)
-	execute("sed -i 's/#net.ipv4.conf.all.rp_filter=1/net.ipv4.conf.all.rp_filter=0/g' /etc/sysctl.conf",True)
-
-	execute("sysctl -p",True)
-
-	#execute("apt-get install neutron-common neutron-plugin-ml2 openvswitch-switch openvswitch-datapath-dkms -y", True)
-	
-	execute("apt-get install neutron-common neutron-plugin-ml2 -y",True)
-
-  
-	#execute("apt-get install neutron-plugin-openvswitch-agent -y", True)
-
-	add_to_conf(neutron_conf, "DEFAULT", "auth_strategy", "keystone")
-
-	add_to_conf(neutron_conf, "keystone_authtoken", "auth_uri", "http://%s:5000/v2.0" %ip_address_mgnt)
-	add_to_conf(neutron_conf, "keystone_authtoken", "auth_host", ip_address_mgnt)
-	add_to_conf(neutron_conf, "keystone_authtoken", "auth_port", "35357")
-	add_to_conf(neutron_conf, "keystone_authtoken", "auth_protocol", "http")
-	add_to_conf(neutron_conf, "keystone_authtoken", "admin_tenant_name", "service")
-	add_to_conf(neutron_conf, "keystone_authtoken", "admin_user", "neutron")
-	add_to_conf(neutron_conf, "keystone_authtoken", "admin_password ", NEUTRON_PASS)
 
 	add_to_conf(neutron_conf, "DEFAULT", "agent_down_time  ", "75")	
 	add_to_conf(neutron_conf, "DEFAULT", "report_interval ", "30")	
 
 
-	add_to_conf(neutron_conf, "DEFAULT", "bind_host", ip_address_mgnt)
+	#add_to_conf(neutron_conf, "DEFAULT", "bind_host", ip_address_mgnt)
 
-	add_to_conf(neutron_conf, "DEFAULT", "rpc_backend", "neutron.openstack.common.rpc.impl_kombu")
-	add_to_conf(neutron_conf, "DEFAULT", "rabbit_host", ip_address_mgnt)
-	add_to_conf(neutron_conf, "DEFAULT", "rabbit_password", RABBIT_PASS)
-
-	add_to_conf(neutron_conf, "DEFAULT", "core_plugin", "ml2")
-	add_to_conf(neutron_conf, "DEFAULT", "service_plugins", "router")
-	add_to_conf(neutron_conf, "DEFAULT", "allow_overlapping_ips", "True")
-
-
-	add_to_conf(neutron_conf, "DEFAULT", "verbose", "True")
-	add_to_conf(neutron_conf, "DEFAULT", "debug", "True")
 	#add_to_conf(neutron_conf, "DEFAULT", "root_helper", "sudo neutron-rootwrap /etc/neutron/rootwrap.conf")
 
 	#add_to_conf(neutron_conf, "database", "connection", "mysql://neutron:%s@%s/neutron" %(NEUTRON_PASS,ip_address_mgnt))
@@ -966,12 +876,42 @@ def install_and_configure_ovs_compute():
 	add_to_conf(neutron_plugin_conf, "OVS", "enable_tunneling", "True")
 	#add_to_conf(neutron_plugin_conf, "OVS", "network_vlan_ranges", "physnet1:1000:2999")
 	#add_to_conf(neutron_plugin_conf, "OVS", "integration_bridge", "br-int")
-	add_to_conf(neutron_plugin_conf, "OVS", "local_ip", tunnel_ip)
+	add_to_conf(neutron_plugin_conf, "OVS", "local_ip", ip_address_tunneling)
 
 	execute("service neutron-plugin-openvswitch-agent restart", True)
 	execute("service openvswitch-switch restart", True)
 	time.sleep(2)
-	execute("ovs-vsctl --may-exist add-br br-int",True)
+
+
+
+def install_and_configure_dashboard():
+	execute("apt-get install apache2 memcached libapache2-mod-wsgi openstack-dashboard -y", True)
+	execute("apt-get remove --purge openstack-dashboard-ubuntu-theme -y", True);
+
+	execute("service apache2 restart", True)
+	execute("service memcached restart", True)
+	time.sleep(2)
+
+def add_cirros_image():
+
+	execute("mkdir /tmp/images",True)
+	execute("cd /tmp/images/",True)
+	execute("wget http://cdn.download.cirros-cloud.net/0.3.2/cirros-0.3.2-x86_64-disk.img",True)
+	execute("glance --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 image-create --name \"cirros-0.3.2-x86_64\" --disk-format qcow2 --container-format bare --is-public True --progress < cirros-0.3.2-x86_64-disk.img" %(ADMIN_TENANT_PASS,ip_address_mgnt),True)
+
+def create_initial_network():
+	
+	ip_parts = ip_address.split(".",4)
+
+	ext_start_address = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "." + "200"
+	ext_end_address = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "." + "253"
+
+	full_cidr = str(netaddr.IPNetwork(ip_address + "/" + ip_mask).cidr)
+
+	execute("neutron --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 net-create ext-net --shared --router:external=True"%(ADMIN_TENANT_PASS,ip_address_mgnt),True)
+	execute("neutron --os-username admin --os-password %s --os-tenant-name admin --os-auth-url http://%s:5000/v2.0 subnet-create ext-net --name ext-subnet --allocation-pool start=%s,end=%s --disable-dhcp --gateway %s %s"%(ADMIN_TENANT_PASS,ip_address_mgnt,ext_start_address,ext_end_address,ip_address_gateway,full_cidr),True)
+
+
 
 initialize_system()
 install_and_configure_ntp()
@@ -982,12 +922,13 @@ create_keystone_users()
 install_command_line()
 install_and_configure_glance()
 install_and_configure_nova()
+install_and_configure_nova_compute()
 install_and_configure_neutron()
 install_and_configure_ovs()
+install_and_configure_ovs_compute()
 install_and_configure_dashboard()
 add_cirros_image()
 create_initial_network()
-install_and_configure_nova_compute()
-install_and_configure_ovs_compute()
+
 
 print_format(" Installation successfull! Login into horizon http://%s/horizon  Username:admin  Password:%s " % (ip_address,ADMIN_TENANT_PASS))
